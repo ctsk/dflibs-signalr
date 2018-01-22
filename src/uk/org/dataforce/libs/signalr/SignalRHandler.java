@@ -2,7 +2,7 @@
  *  Copyright 2018 Shane Mc Cormack <shanemcc@gmail.com>.
  *  See LICENSE for licensing details.
  */
-package uk.org.dataforce.dflibs.signalr;
+package uk.org.dataforce.libs.signalr;
 
 /**
  *
