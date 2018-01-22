@@ -43,6 +43,8 @@ import org.apache.http.client.utils.URIBuilder;
 import org.apache.http.cookie.Cookie;
 import org.apache.http.impl.client.BasicCookieStore;
 import org.apache.http.util.EntityUtils;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 // TODO: import uk.org.dataforce.libs.logger.LogLevel;
 // TODO: import uk.org.dataforce.libs.logger.Logger;
 
@@ -89,6 +91,9 @@ public class SignalRClient implements EventHandler {
     private final Executor httpContext;
     /** HTTP Cookie Store */
     private final CookieStore cookieStore;
+
+    /** Background tasks. */
+    private ExecutorService executor = Executors.newCachedThreadPool();
 
     /** Our handler. */
     private final SignalRHandler handler;
@@ -375,6 +380,14 @@ public class SignalRClient implements EventHandler {
 
     public boolean canSend() {
         return lastConnectionInfo != null && eventSource != null && initialized && eventSource.getState() == ReadyState.OPEN;
+    }
+
+    public void sendBackground(final String hub, final String method, final List<Object> args, final Map<String, String> state) throws JsonProcessingException, URISyntaxException, IOException {
+        executor.submit(() -> {
+            try {
+                send(hub, method, args, state);
+            } catch (Exception ex) { /* (Shrug) */ }
+        });
     }
 
     public String send(final String hub, final String method, final List<Object> args, final Map<String, String> state) throws JsonProcessingException, URISyntaxException, IOException {
