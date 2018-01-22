@@ -21,6 +21,7 @@ import com.launchdarkly.eventsource.ReadyState;
 import com.launchdarkly.eventsource.UnsuccessfulResponseException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.Serializable;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Arrays;
@@ -30,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 import okhttp3.Headers;
@@ -45,6 +47,7 @@ import org.apache.http.impl.client.BasicCookieStore;
 import org.apache.http.util.EntityUtils;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Consumer;
 // TODO: import uk.org.dataforce.libs.logger.LogLevel;
 // TODO: import uk.org.dataforce.libs.logger.Logger;
 
@@ -382,12 +385,18 @@ public class SignalRClient implements EventHandler {
         return lastConnectionInfo != null && eventSource != null && initialized && eventSource.getState() == ReadyState.OPEN;
     }
 
-    public void sendBackground(final String hub, final String method, final List<Object> args, final Map<String, String> state) throws JsonProcessingException, URISyntaxException, IOException {
+    public CompletableFuture<String> sendBackground(final String hub, final String method, final List<Object> args, final Map<String, String> state) {
+        final CompletableFuture<String> result = new CompletableFuture<>();
+
         backgroundSender.submit(() -> {
             try {
-                send(hub, method, args, state);
-            } catch (Exception ex) { /* (Shrug) */ }
+                result.complete(send(hub, method, args, state));
+            } catch (final Exception e) {
+                result.completeExceptionally(e);
+            }
         });
+
+        return result;
     }
 
     public String send(final String hub, final String method, final List<Object> args, final Map<String, String> state) throws JsonProcessingException, URISyntaxException, IOException {
