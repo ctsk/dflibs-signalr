@@ -93,7 +93,7 @@ public class SignalRClient implements EventHandler {
     private final CookieStore cookieStore;
 
     /** Background tasks. */
-    private ExecutorService executor = Executors.newCachedThreadPool();
+    private ExecutorService backgroundSender = Executors.newFixedThreadPool(1);
 
     /** Our handler. */
     private final SignalRHandler handler;
@@ -383,7 +383,7 @@ public class SignalRClient implements EventHandler {
     }
 
     public void sendBackground(final String hub, final String method, final List<Object> args, final Map<String, String> state) throws JsonProcessingException, URISyntaxException, IOException {
-        executor.submit(() -> {
+        backgroundSender.submit(() -> {
             try {
                 send(hub, method, args, state);
             } catch (Exception ex) { /* (Shrug) */ }
