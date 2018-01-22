@@ -1,0 +1,53 @@
+plugins {
+  id 'java'
+  id 'maven'
+  id 'maven-publish'
+  id "com.jfrog.bintray" version "1.7"
+}
+
+group = 'uk.org.dataforce.libs'
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+sourceSets {
+    main.java.srcDirs = ['src']
+    test.java.srcDirs = ['test']
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compile group: 'com.google.guava', name:'guava', version: '19.0'
+
+    compile group: 'org.apache.httpcomponents', name: 'httpclient', version: '4.5.3'
+    compile group: 'org.apache.httpcomponents', name: 'fluent-hc', version: '4.5.3'
+
+    compile group: 'com.fasterxml.jackson.core', name: 'jackson-annotations', version: '2.8.6'
+    compile group: 'com.fasterxml.jackson.core', name: 'jackson-core', version: '2.8.6'
+    compile group: 'com.fasterxml.jackson.core', name: 'jackson-databind', version: '2.8.6'
+
+    compile group: 'com.launchdarkly', name: 'okhttp-eventsource', version: '1.5.2'
+}
+
+jar {
+    outputs.file "dist/dflibs-signalr.jar"
+
+    manifest { }
+
+    doLast {
+        copy {
+            from jar.archivePath
+            into "dist/"
+            rename ".*", "dflibs-signalr.jar"
+        }
+    }
+}
+
+apply from: 'gradle/publishing.gradle'
+
+task wrapper(type: Wrapper) {
+    gradleVersion = '3.3'
+}

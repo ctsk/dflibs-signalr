@@ -1,0 +1,45 @@
+publishing {
+	publications {
+		pushBintray(MavenPublication) {
+			from components.java
+			groupId 'uk.org.dataforce.libs'
+			artifactId 'signalr'
+			version project.version
+		}
+	}
+}
+
+bintray {
+	// TODO: This shouldn't shell out to git.
+	ext.getGitVersion = {directory ->
+		def stdout = new ByteArrayOutputStream()
+		exec {
+			commandLine 'git', "--git-dir=" + (new File(directory, ".git")).getAbsolutePath(), 'describe', '--tags'
+			standardOutput = stdout
+			ignoreExitValue = true
+		}
+		return stdout.toString().trim().isEmpty() ? "Unknown" : stdout.toString().trim();
+	}
+
+	def gitVersion = getGitVersion(project.projectDir)
+	project.version = gitVersion
+
+	user = project.hasProperty('bintrayUser') ? project.property('bintrayUser') : System.getenv('BINTRAY_USER')
+	key = project.hasProperty('bintrayApiKey') ? project.property('bintrayApiKey') : System.getenv('BINTRAY_API_KEY')
+	publications = ['pushBintray']
+	publish = true
+	pkg {
+		repo = 'dflibs'
+		name = 'signalr'
+		licenses = ['MIT']
+		desc = 'Dataforce SignalR Client Library'
+		websiteUrl = 'https://github.com/ShaneMcC/dflibs-signalr'
+		issueTrackerUrl = 'https://github.com/ShaneMcC/dflibs-signalr/issues'
+		vcsUrl = 'https://github.com/ShaneMcC/dflibs-signalr.git'
+		version {
+			name = gitVersion
+			desc = 'Dataforce SignalR Client Library'
+			vcsTag = gitVersion
+		}
+	}
+}
