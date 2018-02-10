@@ -225,14 +225,10 @@ public class SignalRClient implements EventHandler {
         }
 
         doLog(Level.INFO, "Disconnecting");
-        try {
-            eventSource.close();
-            eventSource = null;
+        eventSource.close();
+        eventSource = null;
 
-            killTimer();
-        } catch (final IOException ex) {
-            // Do Nothing
-        }
+        killTimer();
     }
 
     /**
@@ -362,12 +358,8 @@ public class SignalRClient implements EventHandler {
      */
     public void reconnect() {
         final URI uri = eventSource.getUri();
-        try {
-            eventSource.close();
-            eventSource = null;
-        } catch (final IOException ioe) {
-            // Do Nothing.
-        }
+        eventSource.close();
+        eventSource = null;
 
         // doLog(Level.FINER, "Re-connecting to: " + uri.toString());
 
