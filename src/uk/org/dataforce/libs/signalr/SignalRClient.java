@@ -21,7 +21,6 @@ import com.launchdarkly.eventsource.ReadyState;
 import com.launchdarkly.eventsource.UnsuccessfulResponseException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.Serializable;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Arrays;
@@ -42,14 +41,12 @@ import org.apache.http.client.fluent.Form;
 import org.apache.http.client.fluent.Request;
 import org.apache.http.client.fluent.Response;
 import org.apache.http.client.utils.URIBuilder;
-import org.apache.http.cookie.Cookie;
 import org.apache.http.impl.client.BasicCookieStore;
 import org.apache.http.util.EntityUtils;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.function.Consumer;
-// TODO: import uk.org.dataforce.libs.logger.LogLevel;
-// TODO: import uk.org.dataforce.libs.logger.Logger;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Class that connects to SignalR.
@@ -96,7 +93,7 @@ public class SignalRClient implements EventHandler {
     private final CookieStore cookieStore;
 
     /** Background tasks. */
-    private ExecutorService backgroundSender = Executors.newFixedThreadPool(1);
+    private final ExecutorService backgroundSender = Executors.newFixedThreadPool(1);
 
     /** Our handler. */
     private final SignalRHandler handler;
@@ -227,7 +224,7 @@ public class SignalRClient implements EventHandler {
             return;
         }
 
-        // TODO: doLog(LogLevel.INFO, "Disconnecting");
+        doLog(Level.INFO, "Disconnecting");
         try {
             eventSource.close();
             eventSource = null;
@@ -303,9 +300,7 @@ public class SignalRClient implements EventHandler {
         builder.reconnectTimeMs(2000);
 
         final List<String> cookieBits = new LinkedList<>();
-        for (final Cookie cookie : getCookieStore().getCookies()) {
-            cookieBits.add(String.format("%s=%s", cookie.getName(), cookie.getValue()));
-        }
+        getCookieStore().getCookies().forEach(cookie -> cookieBits.add(String.format("%s=%s", cookie.getName(), cookie.getValue())));
 
         final Headers.Builder headers = new Headers.Builder();
         headers.add("Cookie", Joiner.on("; ").join(cookieBits));
@@ -329,7 +324,7 @@ public class SignalRClient implements EventHandler {
 
         final URI uri = getURI("connect", connectHubs);
 
-        // TODO: doLog(LogLevel.DEBUG4, "Connecting to: " + uri.toString());
+        doLog(Level.FINER, "Connecting to: " + uri.toString());
 
         initialized = false;
 
@@ -346,9 +341,9 @@ public class SignalRClient implements EventHandler {
             connectHubs.add(map);
         }
 
-        // TODO: doLog(LogLevel.DEBUG5, "Send Start");
+        doLog(Level.FINEST, "Send Start");
         final URI uri = getURI("start", connectHubs);
-        // TODO: doLog(LogLevel.DEBUG5, "    To: " + uri.toString());
+        doLog(Level.FINEST, "    To: " + uri.toString());
 
         final Response response = getHttpContext().execute(Request.Get(uri.toString()));
 
@@ -359,7 +354,7 @@ public class SignalRClient implements EventHandler {
         }
 
         final String returnData = EntityUtils.toString(httpResponse.getEntity());
-        // TODO: doLog(LogLevel.DEBUG5, "    Result: " + returnData);
+        doLog(Level.FINEST, "    Result: " + returnData);
     }
 
     /**
@@ -374,7 +369,7 @@ public class SignalRClient implements EventHandler {
             // Do Nothing.
         }
 
-        // doLog(LogLevel.DEBUG4, "Re-connecting to: " + uri.toString());
+        // doLog(Level.FINER, "Re-connecting to: " + uri.toString());
 
         initialized = false;
         eventSource = getNewEventSource(uri);
@@ -440,8 +435,8 @@ public class SignalRClient implements EventHandler {
         final URI uri = getURI("send", connectHubs);
         final String data = objectMapper.writeValueAsString(connectionData);
 
-        // TODO: doLog(LogLevel.DEBUG4, "Sending to: " + uri.toString());
-        // TODO: doLog(LogLevel.DEBUG5, "      Data: " + data);
+        doLog(Level.FINER, "Sending to: " + uri.toString());
+        doLog(Level.FINEST, "      Data: " + data);
 
         final Response response = getHttpContext().execute(Request.Post(uri.toString()).bodyForm(Form.form().add("data", data).build()));
 
@@ -452,21 +447,21 @@ public class SignalRClient implements EventHandler {
         }
 
         final String returnData = EntityUtils.toString(httpResponse.getEntity());
-        // TODO: doLog(LogLevel.DEBUG5, "    Result: " + returnData);
+        doLog(Level.FINEST, "    Result: " + returnData);
         messageLock.release();
         return returnData;
     }
 
-// TODO:    /**
-// TODO:     * Log a debug line to CLI at the specified level.
-// TODO:     *
-// TODO:     * @param level Level to log at.
-// TODO:     * @param logString String.format() string to log.
-// TODO:     * @param args Format arguments.
-// TODO:     */
-// TODO:    private void doLog(final LogLevel level, final String logString, final Object... args) {
-// TODO:        Logger.log(level, "[signalR::" + (lastConnectionInfo == null ? "NULL" : lastConnectionInfo.getConnectionID()) + "] " + (args.length == 0 ? logString : String.format(logString, args)));
-// TODO:    }
+    /**
+     * Log a debug line to CLI at the specified level.
+     *
+     * @param level Level to log at.
+     * @param logString String.format() string to log.
+     * @param args Format arguments.
+     */
+    private void doLog(final Level level, final String logString, final Object... args) {
+        Logger.getLogger("uk.org.dataforce.libs.singlar").log(level, "[signalR::{0}] {1}", new Object[]{lastConnectionInfo == null ? "NULL" : lastConnectionInfo.getConnectionID(), args.length == 0 ? logString : String.format(logString, args)});
+    }
 
     /**
      * Called when the EventSource is open.
@@ -475,7 +470,7 @@ public class SignalRClient implements EventHandler {
      */
     @Override
     public void onOpen() throws Exception {
-        // TODO: doLog(LogLevel.DEBUG4, "onOpen");
+        doLog(Level.FINER, "onOpen");
         killTimer();
 
         keepaliveTimerSem.acquireUninterruptibly();
@@ -489,7 +484,7 @@ public class SignalRClient implements EventHandler {
                 public void run() {
                     if (SignalRClient.this.keepaliveTimer == keepaliveTimer) {
                         if (System.currentTimeMillis() - lastMessageTime > keepaliveTimeout) {
-                            // TODO: Logger.info("SignalR timed out. Reconnecting.");
+                            doLog(Level.INFO, "SignalR timed out. Reconnecting.");
                             reconnect();
                         }
                     } else {
@@ -509,7 +504,7 @@ public class SignalRClient implements EventHandler {
      */
     @Override
     public void onClosed() throws Exception {
-        // TODO: doLog(LogLevel.DEBUG4, "onClosed");
+        doLog(Level.FINER, "onClosed");
         killTimer();
     }
 
@@ -538,10 +533,10 @@ public class SignalRClient implements EventHandler {
         lastMessageTime = System.currentTimeMillis();
 
         boolean handled = false;
-        // TODO: doLog(LogLevel.DEBUG4, "onMessage:");
-        // TODO: doLog(LogLevel.DEBUG4, "\t LAST EID: %s", me.getLastEventId());
-        // TODO: doLog(LogLevel.DEBUG5, "\t     DATA: %s", me.getData());
-        // TODO: doLog(LogLevel.DEBUG5, "\t   STRING: %s", string);
+        doLog(Level.FINER, "onMessage:");
+        doLog(Level.FINER, "\t LAST EID: %s", me.getLastEventId());
+        doLog(Level.FINEST, "\t     DATA: %s", me.getData());
+        doLog(Level.FINEST, "\t   STRING: %s", string);
 
         if (me.getData().equalsIgnoreCase("initialized")) {
             initialized = true;
@@ -605,7 +600,7 @@ public class SignalRClient implements EventHandler {
         }
 
         if (!handled) {
-            // TODO: doLog(LogLevel.DEBUG4, "\t    UDATA: %s", me.getData());
+            doLog(Level.FINER, "\t    UDATA: %s", me.getData());
         }
 
         messageLock.release();
@@ -638,7 +633,7 @@ public class SignalRClient implements EventHandler {
         }
 
         try {
-            // doLog(LogLevel.DEBUG9, "Setting reconnect URI: " + builder.build());
+            // doLog(Level.FINEST, "Setting reconnect URI: " + builder.build());
             eventSource.setUri(builder.build());
         } catch (final URISyntaxException ex) {
             // Do nothing, should never happen.
@@ -653,8 +648,8 @@ public class SignalRClient implements EventHandler {
      */
     @Override
     public void onComment(final String comment) throws Exception {
-        // TODO: doLog(LogLevel.DEBUG4, "onComment:");
-        // TODO: doLog(LogLevel.DEBUG4, "\t COMMENT: %s", comment);
+        doLog(Level.FINER, "onComment:");
+        doLog(Level.FINER, "\t COMMENT: %s", comment);
     }
 
     /**
@@ -664,11 +659,11 @@ public class SignalRClient implements EventHandler {
      */
     @Override
     public void onError(final Throwable error) {
-        // TODO: doLog(LogLevel.ERROR, "onError:");
-        // TODO: doLog(LogLevel.ERROR, "\t    TYPE: %s", error.getClass().toGenericString());
-        // TODO: doLog(LogLevel.ERROR, "\t MESSAGE: %s", error.getMessage());
+        doLog(Level.WARNING, "onError:");
+        doLog(Level.WARNING, "\t    TYPE: %s", error.getClass().toGenericString());
+        doLog(Level.WARNING, "\t MESSAGE: %s", error.getMessage());
         for (final StackTraceElement ste : error.getStackTrace()) {
-            // TODO: doLog(LogLevel.ERROR, "\t   TRACE: %s", ste.toString());
+            doLog(Level.WARNING, "\t   TRACE: %s", ste.toString());
         }
 
         if (error instanceof UnsuccessfulResponseException) {
