@@ -538,7 +538,11 @@ public class SignalRClient implements EventHandler {
             hasAborted.set(true);
             handler.connectionAborted(this);
         } else {
-            handler.connectionClosed(this);
+            // Don't send connectionClosed event unless we are shutdown,
+            // as we will reconnect and handle it silently.
+            if (eventSource.getState() == ReadyState.SHUTDOWN) {
+                handler.connectionClosed(this);
+            }
         }
     }
 
