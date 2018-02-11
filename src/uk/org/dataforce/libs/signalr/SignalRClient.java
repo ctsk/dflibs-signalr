@@ -45,6 +45,7 @@ import org.apache.http.impl.client.BasicCookieStore;
 import org.apache.http.util.EntityUtils;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -97,6 +98,12 @@ public class SignalRClient implements EventHandler {
 
     /** Our handler. */
     private final SignalRHandler handler;
+
+    /** Failed open counter. */
+    private final AtomicInteger failedOpenCounter = new AtomicInteger(0);
+
+    /** Have we aborted? */
+    private final AtomicBoolean hasAborted = new AtomicBoolean(false);
 
     public SignalRClient(final SignalRHandler handler, final CookieStore cookieStore, final Executor httpContext) {
         this.handler = handler;
@@ -210,6 +217,14 @@ public class SignalRClient implements EventHandler {
         return new SignalRConnectionInfo(connectionId, connectionToken, protocolVersion);
     }
 
+    public boolean hasAborted() {
+        return hasAborted.get();
+    }
+
+    public int getFailedOpenCount() {
+        return failedOpenCounter.get();
+    }
+
     /**
      * Are we currently connected?
      *
@@ -268,24 +283,39 @@ public class SignalRClient implements EventHandler {
     }
 
     public void waitForReady() {
-        // We need to wait until the socket is open before we can actually
-        // do anything
-        while (eventSource.getState() == ReadyState.CONNECTING) {
-            try {
-                Thread.sleep(100);
-            } catch (final InterruptedException ex) {
-                // Do nothing
-            }
-        }
+        // Keep trying until we get the right outcome...
+        while (true) {
 
-        // If the socket is open, wait until we have the initialized message.
-        if (eventSource.getState() == ReadyState.OPEN) {
-            while (!canSend()) {
+            // We need to wait until the socket is open before we can actually
+            // do anything
+            doLog(Level.FINEST, "Waiting for connection...");
+            while (eventSource != null && eventSource.getState() == ReadyState.CONNECTING) {
                 try {
                     Thread.sleep(100);
                 } catch (final InterruptedException ex) {
                     // Do nothing
                 }
+            }
+            doLog(Level.FINEST, "Connected.");
+
+            // If the socket is open, wait until we have the initialized message.
+            if (eventSource != null && eventSource.getState() == ReadyState.OPEN) {
+                doLog(Level.FINEST, "Waiting for initialized...");
+                while (!canSend() && eventSource.getState() == ReadyState.OPEN) {
+                    try {
+                        Thread.sleep(100);
+                    } catch (final InterruptedException ex) {
+                        // Do nothing
+                    }
+                }
+                doLog(Level.FINEST, "Ready.");
+                break;
+            } else {
+                doLog(Level.FINEST, "Waiting failed. Expected: " + ReadyState.OPEN + " - Got: " + (eventSource != null ? eventSource.getState() : "NO EVENTSOURCE"));
+            }
+
+            if (eventSource == null || hasAborted.get()) {
+                break;
             }
         }
     }
@@ -323,6 +353,9 @@ public class SignalRClient implements EventHandler {
         doLog(Level.FINER, "Connecting to: " + uri.toString());
 
         initialized = false;
+
+        hasAborted.set(false);
+        failedOpenCounter.set(0);
 
         eventSource = getNewEventSource(uri);
         eventSource.start();
@@ -498,6 +531,15 @@ public class SignalRClient implements EventHandler {
     public void onClosed() throws Exception {
         doLog(Level.FINER, "onClosed");
         killTimer();
+        if (failedOpenCounter.incrementAndGet() > 10) {
+            doLog(Level.WARNING, "Failed to connect to signalr 10 times, aborting.");
+            eventSource.close();
+            eventSource = null;
+            hasAborted.set(true);
+            handler.connectionAborted(this);
+        } else {
+            handler.connectionClosed(this);
+        }
     }
 
     private void killTimer() {
@@ -531,6 +573,9 @@ public class SignalRClient implements EventHandler {
         doLog(Level.FINEST, "\t   STRING: %s", string);
 
         if (me.getData().equalsIgnoreCase("initialized")) {
+            failedOpenCounter.set(0);
+            hasAborted.set(false);
+
             initialized = true;
             handled = true;
 

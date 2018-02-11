@@ -11,5 +11,6 @@ package uk.org.dataforce.libs.signalr;
 public interface SignalRHandler {
     public void handle(final SignalRClient client, final SignalRMessage message);
     public void connectionClosed(final SignalRClient client);
+    public void connectionAborted(final SignalRClient client);
     public void keepalive(final SignalRClient client);
 }
