@@ -605,16 +605,31 @@ public class SignalRClient implements EventHandler {
                         final ObjectMapper messageMapper = new ObjectMapper();
                         messageMapper.setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
 
+                        final List<SignalRMessage> signalrMessages = new LinkedList<>();
+
                         if (messages instanceof ArrayNode) {
                             for (final JsonNode message : messages) {
                                 final SignalRMessage signalrmessage = messageMapper.convertValue(message, SignalRMessage.class);
 
+                                if (handler instanceof SignalRMultiHandler) {
+                                    signalrMessages.add(signalrmessage);
+                                } else {
+                                    try {
+                                        handler.handle(this, signalrmessage);
+                                    } catch (final Throwable t) {
+                                        onError(t);
+                                    }
+                                }
+                            }
+
+                            if (handler instanceof SignalRMultiHandler) {
                                 try {
-                                    handler.handle(this, signalrmessage);
+                                    ((SignalRMultiHandler)handler).multihandle(this, signalrMessages);
                                 } catch (final Throwable t) {
                                     onError(t);
                                 }
                             }
+
                             handled = true;
                         }
                     } else {
