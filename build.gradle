@@ -29,7 +29,7 @@ dependencies {
     compile group: 'com.fasterxml.jackson.core', name: 'jackson-core', version: '2.9.8'
     compile group: 'com.fasterxml.jackson.core', name: 'jackson-databind', version: '2.9.8'
 
-    compile group: 'com.launchdarkly', name: 'okhttp-eventsource', version: '1.8.0'
+    compile group: 'com.launchdarkly', name: 'okhttp-eventsource', version: '1.9.0'
 }
 
 jar {
