@@ -1,8 +1,8 @@
 plugins {
-  id 'java'
-  id 'maven'
-  id 'maven-publish'
-  id "com.jfrog.bintray" version "1.7"
+    id 'java'
+    id 'maven'
+    id 'maven-publish'
+    id "com.jfrog.bintray" version "1.7"
 }
 
 group = 'uk.org.dataforce.libs'
@@ -14,28 +14,32 @@ sourceSets {
     main.java.srcDirs = ['src']
     test.java.srcDirs = ['test']
 }
+allprojects {
+    repositories {
+        mavenCentral()
 
-repositories {
-    mavenCentral()
+        maven { url "https://jitpack.io" }
+    }
 }
 
 dependencies {
-    compile group: 'com.google.guava', name:'guava', version: '23.0'
+    testCompile 'junit:junit:4.12'
 
-    compile group: 'org.apache.httpcomponents', name: 'httpclient', version: '4.5.8'
-    compile group: 'org.apache.httpcomponents', name: 'fluent-hc', version: '4.5.8'
+    compile group: 'com.google.guava', name: 'guava', version: '23.0'
+    compile group: 'org.slf4j', name: 'slf4j-simple', version: '1.6.1'
 
     compile group: 'com.fasterxml.jackson.core', name: 'jackson-annotations', version: '2.9.8'
     compile group: 'com.fasterxml.jackson.core', name: 'jackson-core', version: '2.9.8'
     compile group: 'com.fasterxml.jackson.core', name: 'jackson-databind', version: '2.9.8'
 
     compile group: 'com.launchdarkly', name: 'okhttp-eventsource', version: '1.9.1'
+    compile group: 'com.squareup.okhttp3', name: 'okhttp', version: '3.14.1'
 }
 
 jar {
     outputs.file "dist/dflibs-signalr.jar"
 
-    manifest { }
+    manifest {}
 
     doLast {
         copy {

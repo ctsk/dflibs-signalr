@@ -19,32 +19,17 @@ import com.launchdarkly.eventsource.EventSource;
 import com.launchdarkly.eventsource.MessageEvent;
 import com.launchdarkly.eventsource.ReadyState;
 import com.launchdarkly.eventsource.UnsuccessfulResponseException;
+
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Timer;
-import java.util.TimerTask;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Semaphore;
+
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import okhttp3.Headers;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.CookieStore;
-import org.apache.http.client.fluent.Executor;
-import org.apache.http.client.fluent.Form;
-import org.apache.http.client.fluent.Request;
-import org.apache.http.client.fluent.Response;
-import org.apache.http.client.utils.URIBuilder;
-import org.apache.http.impl.client.BasicCookieStore;
-import org.apache.http.util.EntityUtils;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+
+import okhttp3.*;
+import org.omg.PortableInterceptor.SYSTEM_EXCEPTION;
+
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -56,61 +41,101 @@ import java.util.logging.Logger;
  * @author Shane Mc Cormack <shanemcc@gmail.com>
  */
 public class SignalRClient implements EventHandler {
-    /** Our last messageId, used for sending. */
+    /**
+     * Our last messageId, used for sending.
+     */
     private static final AtomicInteger messageID = new AtomicInteger(0);
-    /** SignalR connection id. */
+    /**
+     * SignalR connection id.
+     */
     private SignalRConnectionInfo lastConnectionInfo = null;
-    /** Our source of events. */
+    /**
+     * Our source of events.
+     */
     private EventSource eventSource;
-    /** ObjectMapper for JSON to POJO. */
+    /**
+     * ObjectMapper for JSON to POJO.
+     */
     private final ObjectMapper objectMapper = new ObjectMapper();
-    /** Have we had the "initialized" message from signalr yet? */
+    /**
+     * Have we had the "initialized" message from signalr yet?
+     */
     private boolean initialized = false;
 
-    /** Lock for onMessage to ensure we do one batch at a time. */
+    /**
+     * Lock for onMessage to ensure we do one batch at a time.
+     */
     private final Semaphore messageLock = new Semaphore(1);
 
-    /** Keepalive Timer. */
+    /**
+     * Keepalive Timer.
+     */
     private volatile Timer keepaliveTimer;
-    /** keepalive timer semaphore. */
+    /**
+     * keepalive timer semaphore.
+     */
     private final Semaphore keepaliveTimerSem = new Semaphore(1);
-    /** Last message time, used by keepaliveTimer. */
+    /**
+     * Last message time, used by keepaliveTimer.
+     */
     private volatile Long lastMessageTime = System.currentTimeMillis();
 
-    /** Host to connect to. */
+    /**
+     * Host to connect to.
+     */
     private String host = "";
-    /** Should we use SSL? */
+    /**
+     * Should we use SSL?
+     */
     private boolean isSSL = true;
-    /** Path to signalr endpoint. */
-    private String path = "/signalr";
-    /** Negotiate protocol version. */
+    /**
+     * Path to signalr endpoint.
+     */
+    private String path = "signalr";
+    /**
+     * Negotiate protocol version.
+     */
     private String negotiateVersion = null;
-    /** Hubs that we use. */
-    private List<String> signalrHubs = Arrays.asList(new String[]{});
+    /**
+     * Hubs that we use.
+     */
+    private List<String> signalrHubs = Collections.emptyList();
 
-    /** HTTP Context to send requests in (keeps hold of cookies etc). */
-    private final Executor httpContext;
-    /** HTTP Cookie Store */
-    private final CookieStore cookieStore;
+    /**
+     * HTTP Context to send requests in (keeps hold of cookies etc).
+     */
+    private final OkHttpClient okHttpClient;
+    /**
+     * HTTP Cookie Store
+     */
+    private final CookieJar cookieJar;
 
-    /** Background tasks. */
+    /**
+     * Background tasks.
+     */
     private final ExecutorService backgroundSender = Executors.newFixedThreadPool(1);
 
-    /** Our handler. */
+    /**
+     * Our handler.
+     */
     private final SignalRHandler handler;
 
-    /** Failed open counter. */
+    /**
+     * Failed open counter.
+     */
     private final AtomicInteger failedOpenCounter = new AtomicInteger(0);
 
-    /** Have we aborted? */
+    /**
+     * Have we aborted?
+     */
     private final AtomicBoolean hasAborted = new AtomicBoolean(false);
 
-    public SignalRClient(final SignalRHandler handler, final CookieStore cookieStore, final Executor httpContext) {
+    public SignalRClient(final SignalRHandler handler, final CookieJar cookiejar, final OkHttpClient okHttpClient) {
         this.handler = handler;
 
-        this.cookieStore = cookieStore == null ? new BasicCookieStore() : cookieStore;
-        this.httpContext = httpContext == null ? Executor.newInstance() : httpContext;
-        this.httpContext.use(this.cookieStore);
+        this.cookieJar = cookiejar == null ? new BasicCookieJar() : cookiejar;
+        OkHttpClient.Builder okHttpClientBuilder = okHttpClient == null ? new OkHttpClient.Builder() : okHttpClient.newBuilder();
+        this.okHttpClient = okHttpClientBuilder.cookieJar(cookieJar).build();
     }
 
     /**
@@ -176,8 +201,8 @@ public class SignalRClient implements EventHandler {
      *
      * @return HTTP Executor.
      */
-    protected final Executor getHttpContext() {
-        return httpContext;
+    protected final OkHttpClient getOkHttpClient() {
+        return okHttpClient;
     }
 
     /**
@@ -185,8 +210,8 @@ public class SignalRClient implements EventHandler {
      *
      * @return Cookie Store
      */
-    protected final CookieStore getCookieStore() {
-        return cookieStore;
+    protected final CookieJar getCookieJar() {
+        return cookieJar;
     }
 
     /**
@@ -194,20 +219,25 @@ public class SignalRClient implements EventHandler {
      *
      * @return New ConnectionID from signalr.
      * @throws IOException
-     * @throws java.net.URISyntaxException
      */
-    protected SignalRConnectionInfo getNewConnectionInfo() throws IOException, URISyntaxException {
-        final URIBuilder uri = new URIBuilder((isSSL() ? "https" : "http") + "://" + host + "/" + path + "/negotiate");
-        uri.addParameter("_", Long.toString(System.currentTimeMillis()));
+    protected SignalRConnectionInfo getNewConnectionInfo() throws IOException {
+        final HttpUrl.Builder url = new HttpUrl.Builder().scheme(isSSL() ? "https" : "http").host(host)
+                .addPathSegment(path)
+                .addPathSegment("negotiate");
+        url.addQueryParameter("_", Long.toString(System.currentTimeMillis()));
 
         if (negotiateVersion != null && !negotiateVersion.isEmpty()) {
-            uri.addParameter("clientProtocol", negotiateVersion);
+            url.addQueryParameter("clientProtocol", negotiateVersion);
         }
 
-        final Response response = getHttpContext().execute(Request.Get(uri.build()));
+        Request request = new Request.Builder()
+                .url(url.build())
+                .build();
 
-        final InputStream contentStream = response.returnContent().asStream();
-        @SuppressWarnings("unchecked")
+        final Response response = okHttpClient.newCall(request).execute();
+
+        final InputStream contentStream = response.body().byteStream();
+
         final Map<String, Object> content = objectMapper.readValue(contentStream, Map.class);
 
         final String connectionId = (String) content.get("ConnectionId");
@@ -249,34 +279,33 @@ public class SignalRClient implements EventHandler {
     /**
      * Build a signalr uri of the given type.
      *
-     * @param type Type of URI to build. ("connect", "send" etc)
+     * @param type           Type of URI to build. ("connect", "send" etc)
      * @param connectionData Map of connection data to pass in URI if needed.
      * @return Build URI
      * @throws JsonProcessingException
-     * @throws URISyntaxException
      */
-    private URI getURI(final String type, final List<Map<String, Object>> connectionData) throws JsonProcessingException, URISyntaxException {
-        final URIBuilder builder = new URIBuilder();
-
-        builder.setScheme(isSSL() ? "https" : "http").setHost(host).setPath(path + "/" + type);
-        builder.setParameter("transport", "serverSentEvents");
+    private HttpUrl getURl(final String type, final List<Map<String, Object>> connectionData) throws JsonProcessingException {
+        final HttpUrl.Builder builder = new HttpUrl.Builder()
+                .scheme(isSSL() ? "https" : "http").host(host)
+                .addPathSegment(path).addPathSegment(type)
+                .setQueryParameter("transport", "serverSentEvents");
 
         if (!Strings.isNullOrEmpty(lastConnectionInfo.getConnectionToken())) {
-            builder.setParameter("connectionToken", lastConnectionInfo.getConnectionToken());
+            builder.setQueryParameter("connectionToken", lastConnectionInfo.getConnectionToken());
         } else if (!Strings.isNullOrEmpty(lastConnectionInfo.getConnectionID())) {
-            builder.setParameter("connectionId", lastConnectionInfo.getConnectionID());
+            builder.setQueryParameter("connectionId", lastConnectionInfo.getConnectionID());
         }
 
         if (!Strings.isNullOrEmpty(lastConnectionInfo.getClientProtocol())) {
-            builder.setParameter("clientProtocol", lastConnectionInfo.getClientProtocol());
+            builder.setQueryParameter("clientProtocol", lastConnectionInfo.getClientProtocol());
         }
 
         if (type.equalsIgnoreCase("connect")) {
-            builder.setParameter("tid", Integer.toString((int) Math.floor(Math.random() * 11)));
+            builder.setQueryParameter("tid", Integer.toString((int) Math.floor(Math.random() * 11)));
         }
 
         if (connectionData != null) {
-            builder.setParameter("connectionData", objectMapper.writeValueAsString(connectionData));
+            builder.setQueryParameter("connectionData", objectMapper.writeValueAsString(connectionData));
         }
 
         return builder.build();
@@ -320,13 +349,14 @@ public class SignalRClient implements EventHandler {
         }
     }
 
-    private EventSource getNewEventSource(final URI uri) {
-        final EventSource.Builder builder = new EventSource.Builder(this, uri);
+    private EventSource getNewEventSource(final HttpUrl url) {
+        final EventSource.Builder builder = new EventSource.Builder(this, url);
 
         builder.reconnectTimeMs(2000);
 
         final List<String> cookieBits = new LinkedList<>();
-        getCookieStore().getCookies().forEach(cookie -> cookieBits.add(String.format("%s=%s", cookie.getName(), cookie.getValue())));
+        getCookieJar().loadForRequest(url).forEach(cookie -> cookieBits.add(String.format("%s=%s", cookie.name(), cookie.value())));
+
 
         final Headers.Builder headers = new Headers.Builder();
         headers.add("Cookie", Joiner.on("; ").join(cookieBits));
@@ -335,7 +365,7 @@ public class SignalRClient implements EventHandler {
         return builder.build();
     }
 
-    public void connect() throws URISyntaxException, IOException {
+    public void connect() throws IOException {
         if (lastConnectionInfo == null) {
             lastConnectionInfo = getNewConnectionInfo();
         }
@@ -348,20 +378,20 @@ public class SignalRClient implements EventHandler {
             connectHubs.add(map);
         }
 
-        final URI uri = getURI("connect", connectHubs);
+        final HttpUrl url = getURl("connect", connectHubs);
 
-        doLog(Level.FINER, "Connecting to: " + uri.toString());
+        doLog(Level.FINER, "Connecting to: " + url.toString());
 
         initialized = false;
 
         hasAborted.set(false);
         failedOpenCounter.set(0);
 
-        eventSource = getNewEventSource(uri);
+        eventSource = getNewEventSource(url);
         eventSource.start();
     }
 
-    public void sendStart() throws URISyntaxException, IOException {
+    public void sendStart() throws IOException {
         final List<Map<String, Object>> connectHubs = new LinkedList<>();
 
         for (final String hub : signalrHubs) {
@@ -371,18 +401,19 @@ public class SignalRClient implements EventHandler {
         }
 
         doLog(Level.FINEST, "Send Start");
-        final URI uri = getURI("start", connectHubs);
-        doLog(Level.FINEST, "    To: " + uri.toString());
+        final HttpUrl url = getURl("start", connectHubs);
+        doLog(Level.FINEST, "    To: " + url.toString());
 
-        final Response response = getHttpContext().execute(Request.Get(uri.toString()));
+        Request request = new Request.Builder().url(url).build();
+        final Response response = okHttpClient.newCall(request).execute();
 
-        final HttpResponse httpResponse = response.returnResponse();
-        int statusCode = httpResponse.getStatusLine().getStatusCode();
+        int statusCode = response.code();
         if (statusCode != 200 && statusCode != 302) {
             throw new IOException("Failed to send start message: HTTP " + statusCode);
         }
 
-        final String returnData = EntityUtils.toString(httpResponse.getEntity());
+
+        final String returnData = response.body().string();
         doLog(Level.FINEST, "    Result: " + returnData);
     }
 
@@ -390,14 +421,14 @@ public class SignalRClient implements EventHandler {
      * Reconnect the eventSource.
      */
     public void reconnect() {
-        final URI uri = eventSource.getUri();
+        final HttpUrl url = eventSource.getHttpUrl();
         eventSource.close();
         eventSource = null;
 
-        // doLog(Level.FINER, "Re-connecting to: " + uri.toString());
+        doLog(Level.FINER, "Re-connecting to: " + url.toString());
 
         initialized = false;
-        eventSource = getNewEventSource(uri);
+        eventSource = getNewEventSource(url);
         eventSource.start();
     }
 
@@ -419,7 +450,7 @@ public class SignalRClient implements EventHandler {
         return result;
     }
 
-    public String send(final String hub, final String method, final List<Object> args, final Map<String, String> state) throws JsonProcessingException, URISyntaxException, IOException {
+    public String send(final String hub, final String method, final List<Object> args, final Map<String, String> state) throws JsonProcessingException, IOException {
         if (!canSend()) {
             throw new IOException("Socket not ready for sending.");
         }
@@ -457,22 +488,25 @@ public class SignalRClient implements EventHandler {
             connectHubs.add(map);
         }
 
-        final URI uri = getURI("send", connectHubs);
+        final HttpUrl url = getURl("send", connectHubs);
         final String data = objectMapper.writeValueAsString(connectionData);
 
-        doLog(Level.FINER, "Sending to: " + uri.toString());
+        doLog(Level.FINER, "Sending to: " + url.toString());
         doLog(Level.FINEST, "      Data: " + data);
 
-        final Response response = getHttpContext().execute(Request.Post(uri.toString()).bodyForm(Form.form().add("data", data).build()));
+        FormBody fb = new FormBody.Builder().add("data", data).build();
+        Request request = new Request.Builder().url(url).post(fb).build();
+        final Response response = okHttpClient.newCall(request).execute();
 
-        final HttpResponse httpResponse = response.returnResponse();
-        int statusCode = httpResponse.getStatusLine().getStatusCode();
+        int statusCode = response.code();
         if (statusCode != 200 && statusCode != 302) {
             throw new IOException("Failed to send message: HTTP " + statusCode);
         }
 
-        final String returnData = EntityUtils.toString(httpResponse.getEntity());
+
+        final String returnData = response.body().string();
         doLog(Level.FINEST, "    Result: " + returnData);
+
         messageLock.release();
         return returnData;
     }
@@ -480,9 +514,9 @@ public class SignalRClient implements EventHandler {
     /**
      * Log a debug line to CLI at the specified level.
      *
-     * @param level Level to log at.
+     * @param level     Level to log at.
      * @param logString String.format() string to log.
-     * @param args Format arguments.
+     * @param args      Format arguments.
      */
     private void doLog(final Level level, final String logString, final Object... args) {
         Logger.getLogger("uk.org.dataforce.libs.singlar").log(level, "[signalR::{0}] {1}", new Object[]{lastConnectionInfo == null ? "NULL" : lastConnectionInfo.getConnectionID(), args.length == 0 ? logString : String.format(logString, args)});
@@ -562,7 +596,7 @@ public class SignalRClient implements EventHandler {
      * Called when the EventSource has a message for us.
      *
      * @param string Nothing of use.
-     * @param me Message from the EventSource.
+     * @param me     Message from the EventSource.
      * @throws Exception
      */
     @Override
@@ -624,7 +658,7 @@ public class SignalRClient implements EventHandler {
 
                             if (handler instanceof SignalRMultiHandler) {
                                 try {
-                                    ((SignalRMultiHandler)handler).multihandle(this, signalrMessages);
+                                    ((SignalRMultiHandler) handler).multihandle(this, signalrMessages);
                                 } catch (final Throwable t) {
                                     onError(t);
                                 }
@@ -644,7 +678,8 @@ public class SignalRClient implements EventHandler {
                         if (groupToken != null) {
                             updateEventSourceURI(lastMessageID.asText(), null, groupToken.asText());
                         } else if (groupData != null) {
-                            final List<String> groups = objectMapper.convertValue(groupData, new TypeReference<List<String>>() {});
+                            final List<String> groups = objectMapper.convertValue(groupData, new TypeReference<List<String>>() {
+                            });
 
                             updateEventSourceURI(lastMessageID.asText(), groups, null);
                         }
@@ -666,34 +701,34 @@ public class SignalRClient implements EventHandler {
      * Ensure we reconnect back into the right groups.
      *
      * @param messageID Last message ID
-     * @param groups Last known groups.
+     * @param groups    Last known groups.
      */
     private void updateEventSourceURI(final String messageID, final List<String> groups, final String groupsToken) {
-        if (eventSource == null || (messageID == null && groups == null && groupsToken == null)) { return; }
+        if (eventSource == null || (messageID == null && groups == null && groupsToken == null)) {
+            return;
+        }
 
-        final URIBuilder builder = new URIBuilder(eventSource.getUri());
-        builder.setPath(path + "/reconnect");
+        final HttpUrl.Builder builder = new HttpUrl.Builder().host(eventSource.getHttpUrl().uri().toString());
+
+        builder.addPathSegment(path + "/reconnect");
 
         if (messageID != null) {
-            builder.setParameter("messageID", messageID);
+            builder.setQueryParameter("messageID", messageID);
         }
 
         if (groupsToken != null) {
-            builder.setParameter("groupsToken", groupsToken);
+            builder.setQueryParameter("groupsToken", groupsToken);
         } else if (groups != null) {
             try {
-                builder.setParameter("groups", objectMapper.writeValueAsString(groups));
+                builder.setQueryParameter("groups", objectMapper.writeValueAsString(groups));
             } catch (final JsonProcessingException ex) {
                 // Do Nothing.
             }
         }
 
-        try {
-            // doLog(Level.FINEST, "Setting reconnect URI: " + builder.build());
-            eventSource.setUri(builder.build());
-        } catch (final URISyntaxException ex) {
-            // Do nothing, should never happen.
-        }
+
+        // doLog(Level.FINEST, "Setting reconnect URI: " + builder.build());
+        eventSource.setHttpUrl(builder.build());
     }
 
     /**
@@ -728,5 +763,9 @@ public class SignalRClient implements EventHandler {
 
             handler.connectionClosed(this);
         }
+    }
+
+    public ReadyState status() {
+        return eventSource.getState();
     }
 }
