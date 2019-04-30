@@ -33,8 +33,8 @@ public class SignalRClientTest {
 
     private String login() throws IOException {
         FormBody credentials = new FormBody.Builder()
-                .add("username", "ctsk_bot")
-                .add("password", "pq21.-gs399")
+                .add("username", "username")
+                .add("password", "password")
                 .add("grant_type", "password")
                 .build();
 
@@ -67,10 +67,8 @@ public class SignalRClientTest {
         signalRClient.waitForReady();
         signalRClient.connect();
         signalRClient.waitForReady();
-        signalRClient.sendStart();
 
         while(true) {
-            signalRClient.waitForReady();
         }
     }
 

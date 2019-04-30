@@ -708,7 +708,7 @@ public class SignalRClient implements EventHandler {
             return;
         }
 
-        final HttpUrl.Builder builder = new HttpUrl.Builder().host(eventSource.getHttpUrl().uri().toString());
+        final HttpUrl.Builder builder = eventSource.getHttpUrl().newBuilder();
 
         builder.addPathSegment(path + "/reconnect");
 
