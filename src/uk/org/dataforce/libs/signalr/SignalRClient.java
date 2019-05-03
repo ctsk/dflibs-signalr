@@ -222,7 +222,7 @@ public class SignalRClient implements EventHandler {
      */
     protected SignalRConnectionInfo getNewConnectionInfo() throws IOException {
         final HttpUrl.Builder url = new HttpUrl.Builder().scheme(isSSL() ? "https" : "http").host(host)
-                .addPathSegment(path)
+                .addEncodedPathSegments(path)
                 .addPathSegment("negotiate");
         url.addQueryParameter("_", Long.toString(System.currentTimeMillis()));
 
@@ -287,7 +287,7 @@ public class SignalRClient implements EventHandler {
     private HttpUrl getURl(final String type, final List<Map<String, Object>> connectionData) throws JsonProcessingException {
         final HttpUrl.Builder builder = new HttpUrl.Builder()
                 .scheme(isSSL() ? "https" : "http").host(host)
-                .addPathSegment(path).addPathSegment(type)
+                .addEncodedPathSegment(path).addPathSegment(type)
                 .setQueryParameter("transport", "serverSentEvents");
 
         if (!Strings.isNullOrEmpty(lastConnectionInfo.getConnectionToken())) {
@@ -710,7 +710,7 @@ public class SignalRClient implements EventHandler {
 
         final HttpUrl.Builder builder = eventSource.getHttpUrl().newBuilder();
 
-        builder.addPathSegment(path + "/reconnect");
+        builder.addEncodedPathSegments(path + "/reconnect");
 
         if (messageID != null) {
             builder.setQueryParameter("messageID", messageID);
